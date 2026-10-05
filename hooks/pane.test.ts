@@ -198,3 +198,23 @@ test('a table too wide for the pane is drawn as one card per row', async ($, on)
   expect(await ui.find({ type: 'Text', text: 'v19' })).toBeDefined()
   await ui.unmount()
 })
+
+test('the buttons sit in a footer on the window\'s last rows, growing upwards for search', async ($, on) => {
+  on('session.cwd', () => ({ value: 'C:/repo' }))
+  on('fs.read', () => ({ value: DOC }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 1, isLink: false } as never }))
+  on('ui.open', () => ({ value: { isPlaced: true } as never }))
+  on('process.run', () => ran('A ──► B'))
+  await open($, 'C:/repo/docs/guide.md')
+  const ui = await mountPane($, 30)
+  const footer = () => ui.find({ key: 'footer' })
+  // window of 30 rows at offset 0: a rule and the buttons on rows 28 and 29
+  expect((await footer())?.props).toMatchObject({ position: 'absolute', top: 28 })
+  for (const key of ['top', 'find', 'refresh']) expect([key, (await ui.find({ key })) !== undefined]).toEqual([key, true])
+
+  await ui.press({ key: 'find' })
+  expect((await footer())?.props.top).toBe(26) // + the field and the status line
+  await ui.input({ key: 'search', text: 'tbls', kind: 'change' })
+  expect((await footer())?.props.top).toBe(25) // + one hit
+  await ui.unmount()
+})

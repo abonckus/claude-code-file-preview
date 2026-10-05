@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Doc, Find } from '../types'
+import type { Doc, Find, View } from '../types'
 import { linkify, toPath } from './linkify'
 import { blocks, chunk, clean, fit, GAP, plain } from './blocks'
 import type { Align, Block, Callout, Table } from './blocks'
@@ -27,6 +27,8 @@ const CALLOUTS = {
 const isAbs =(p: string) => /^([A-Za-z]:)?[\\/]/.test(p)
 const doc = atom({ plugin: 'file-preview', key: 'doc' } as const, { path: '', text: '', mtime: 0 } as Doc)
 const find = atom({ plugin: 'file-preview', key: 'find' } as const, { open: false, query: '' } as Find)
+// The pane's scroll offset, recorded by the ui.scroll hook so the footer can follow it.
+const view = atom({ plugin: 'file-preview', key: 'view' } as const, { offset: undefined } as View)
 const WATCH_MS = 1500
 
 // A block's searchable lines, as plain text.
@@ -147,6 +149,14 @@ export const register: Register = (on, options) => {
     const path = isAbs(arg) ? arg : `${await $.session.cwd()}/${arg}`
     await show($, path)
     return { text: `Previewing ${arg}` }
+  })
+
+  // Lets the engine scroll as usual, then records where to, so the pane redraws its
+  // footer on the window's new last rows.
+  on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
+    const moved = await next(e)
+    if (!moved.deny) await update($, view, () => ({ offset: e.offset }))
+    return moved
   })
 
   on('ui.close', async ($, e, next) => {
@@ -361,50 +371,61 @@ export const register: Register = (on, options) => {
     const hits = isSearching ? search(query, entries) : []
     // A refused scroll or focus (the pane not holding the keys) is not an error worth a throw.
     const jump = (block: number) => $.ui.scroll({ to: { key: `b:${block}` }, in: PANE, block: 'start' }).catch(() => {})
-    const searchRow = isSearching && Input ? (
-      <Box flexDirection="column" width={width} marginTop={1}>
-        <Box flexDirection="row" columnGap={1}>
-          <Box flexGrow={1}>
-            <Input
-              key="search"
-              autoFocus
-              placeholder="Fuzzy search…"
-              value={query}
-              onInput={(value: string) => void update($, find, f => ({ ...f, query: value }))}
-              onSubmit={(value: string) => {
-                const [first] = search(value, entries, 1)
-                if (first) void jump(first.block)
-              }}
-            />
+    // The sticky footer: absolutely placed on the window's last rows, following the
+    // scroll (the ui.scroll hook records the offset). Every row is one terminal row,
+    // so its height is known: a rule, the search rows while searching, the buttons.
+    const searching = isSearching && Input !== null
+    const footerRows = 2 + (searching ? 2 + hits.length : 0)
+    const { offset: stored } = await read($, view)
+    const offset = stored ?? e.props.scroll.offset
+    const bodyRows = Math.max(footerRows + 1, e.props.scroll.bodyRows)
+    const blank = ' '.repeat(Math.max(1, width))
+    const clip = (t: string) => (t.length > width ? `${t.slice(0, width - 1)}…` : t)
+    const footer = (
+      <Box key="footer" position="absolute" top={offset + bodyRows - footerRows} left={PAD} width={width} flexDirection="column">
+        {/* paints over the page beneath before the footer's own rows */}
+        <Box position="absolute" top={0} left={0} flexDirection="column">
+          {Array.from({ length: footerRows }, () => <Text>{blank}</Text>)}
+        </Box>
+        <Text dimColor>{'─'.repeat(Math.max(1, width))}</Text>
+        {searching && Input ? (
+          <Box flexDirection="column">
+            <Box flexDirection="row" columnGap={1}>
+              <Box flexGrow={1}>
+                <Input
+                  key="search"
+                  autoFocus
+                  placeholder="Fuzzy search…"
+                  value={query}
+                  onInput={(value: string) => void update($, find, f => ({ ...f, query: value }))}
+                  onSubmit={(value: string) => {
+                    const [first] = search(value, entries, 1)
+                    if (first) void jump(first.block)
+                  }}
+                />
+              </Box>
+              <Button key="close-search" label="✕" onPress={() => update($, find, () => ({ open: false, query: '' }))} />
+            </Box>
+            <Text dimColor wrap="truncate-end">{query ? `${hits.length === 8 ? '8+' : hits.length} matches; Enter jumps to the first` : 'Type to search; Enter jumps to the best match'}</Text>
+            {hits.map((hit, k) => (
+              <Button key={`hit:${k}`} plain label={clip(hit.text)} onPress={() => jump(hit.block)} />
+            ))}
           </Box>
-          <Button key="close-search" label="✕" onPress={() => update($, find, () => ({ open: false, query: '' }))} />
-        </Box>
-        <Text dimColor>{query ? `${hits.length === 8 ? '8+' : hits.length} matches; Enter jumps to the first` : 'Type to search; Enter jumps to the best match'}</Text>
-        {hits.map((hit, k) => (
-          <Button key={`hit:${k}`} plain label={hit.text.length > width - 4 ? `${hit.text.slice(0, width - 5)}…` : hit.text} onPress={() => jump(hit.block)} />
-        ))}
-      </Box>
-    ) : null
-
-    return (
-      <Box flexDirection="column" paddingX={PAD}>
-        <Box flexDirection="row" flexWrap="wrap">
-          <Text dimColor wrap="truncate-start">{`${crumbs.slice(-3).join(' / ')} / `}</Text>
-          <Text bold color="cyan">{name}</Text>
-        </Box>
-        <Box flexDirection="row" justifyContent="space-between" width={width}>
-          <Text dimColor>{stats}</Text>
+        ) : null}
+        <Box flexDirection="row" justifyContent="space-between">
           <Box flexDirection="row" columnGap={1}>
             <Button key="top" label="↑ Top" hotkey="u" onPress={() => $.ui.scroll({ to: 'start', in: PANE }).catch(() => {})} />
-            {Input ? <Button
-              key="find"
-              label="⌕ Search"
-              hotkey="s"
-              onPress={async () => {
-                await update($, find, f => ({ ...f, open: true }))
-                await $.ui.focus({ requestId: PANE, key: 'search' }).catch(() => {})
-              }}
-            /> : null}
+            {Input ? (
+              <Button
+                key="find"
+                label="⌕ Search"
+                hotkey="s"
+                onPress={async () => {
+                  await update($, find, f => ({ ...f, open: true }))
+                  await $.ui.focus({ requestId: PANE, key: 'search' }).catch(() => {})
+                }}
+              />
+            ) : null}
             <Button
               key="refresh"
               label="↻ Refresh"
@@ -415,12 +436,24 @@ export const register: Register = (on, options) => {
               }}
             />
           </Box>
+          <Text dimColor wrap="truncate-start">u top · s search · r refresh</Text>
         </Box>
-        {searchRow}
+      </Box>
+    )
+
+    return (
+      // minHeight keeps the tree at least a window tall, so the footer is never below its end
+      <Box flexDirection="column" paddingX={PAD} paddingBottom={footerRows} minHeight={bodyRows}>
+        <Box flexDirection="row" flexWrap="wrap">
+          <Text dimColor wrap="truncate-start">{`${crumbs.slice(-3).join(' / ')} / `}</Text>
+          <Text bold color="cyan">{name}</Text>
+        </Box>
+        <Text dimColor wrap="truncate-end">{stats}</Text>
         <Text dimColor>{'─'.repeat(Math.max(1, width))}</Text>
         <Box flexDirection="column" rowGap={1} marginTop={1} width={width}>
           {body}
         </Box>
+        {footer}
       </Box>
     )
   })

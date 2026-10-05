@@ -16,6 +16,7 @@ Mention a `.md`, `.json` or `.yaml` file in a conversation and Claude's reply tu
 - **Live reload.** The file is checked every 1.5 s and reloaded when it changes, with a toast to say so. There is also a **↻ Refresh** button.
 - **Search.** **⌕ Search** opens a fuzzy search over the file: type a few letters in order (`crlim` finds *Credit Limit*), the best matches list under the field, Enter jumps to the first, and each match is a button that scrolls to it.
 - **↑ Top** scrolls back to the start.
+- **Sticky footer.** The buttons (and the search field while searching) stay on the pane's bottom rows as you scroll.
 - **`/preview <path>`** opens any file by hand.
 
 ## Requirements
@@ -50,11 +51,7 @@ While the pane has the keyboard (click it, or `ctrl+x tab` from the prompt):
 | `r` | Refresh |
 | `up` / `down`, `pageup` / `pagedown`, `home` / `end` | Scroll (Claude Code's own pane keys) |
 
-A pane button's hotkey must be one letter or digit, so search cannot be `/`. For vim-style scrolling, add to `~/.claude/keybindings.json`:
-
-```json
-{ "context": "Pane", "bindings": { "j": "pane:scrollDown", "k": "pane:scrollUp" } }
-```
+A pane button's hotkey must be one letter or digit, so search cannot be `/`.
 
 ## External highlighters
 
