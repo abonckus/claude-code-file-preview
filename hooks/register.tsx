@@ -3,14 +3,14 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Doc } from '../types'
 import { linkify, toPath } from './linkify'
-import { blocks, fit, GAP } from './blocks'
-import { LANGS, lines } from './highlight'
-import type { Span } from './highlight'
+import { blocks, chunk, clean, fit, GAP } from './blocks'
 import type { Align, Block, Callout, Table } from './blocks'
 
-const PANE = 'md-preview'
+const PANE = 'file-preview'
 const MAX = 10000 // Markdown element cap, per prose block
-const FILE_MAX = 200_000
+const FILE_MAX = 1_000_000 // read cap; what is drawn is cut further below
+const MD_MAX = 60_000 // markdown drawn, kept well inside the engine's 100,000-character tree bound
+const DATA_BUDGET = 70_000 // JSON/YAML source characters drawn
 const PAD = 2 // side gutter, like a docs page
 const READ_MAX = 110 // reading width cap, columns
 const JUSTIFY = { left: 'flex-start', center: 'center', right: 'flex-end' } as const satisfies Record<Align, string>
@@ -22,7 +22,7 @@ const CALLOUTS = {
   caution: { color: 'red', icon: '✖', label: 'Caution' },
 } as const satisfies Record<Callout, { color: string; icon: string; label: string }>
 const isAbs =(p: string) => /^([A-Za-z]:)?[\\/]/.test(p)
-const doc = atom({ plugin: 'md-preview', key: 'doc' } as const, { path: '', text: '', mtime: 0 } as Doc)
+const doc = atom({ plugin: 'file-preview', key: 'doc' } as const, { path: '', text: '', mtime: 0 } as Doc)
 const WATCH_MS = 1500
 
 // ponytail: module cache, lost on reload; fine, a redraw re-renders
@@ -48,23 +48,22 @@ const renderMermaid = async ($: EngineInterface, code: string, width: number): P
   }
 }
 
-const codes = new Map<string, Span[] | null>()
-const highlight = async ($: EngineInterface, lang: string, code: string): Promise<Span[] | null> => {
-  const id = `${lang}\n${code}`
-  if (!codes.has(id)) {
-    const run = await $.process
-      .run(['nvim', '--headless', '--clean', '-l', `${$.plugin.root}/hooks/highlight.lua`, LANGS[lang] ?? lang], {
-        stdin: code,
-        timeoutMs: 10_000,
-      })
-      .catch(() => null)
-    let spans: Span[] | null = null
-    try {
-      spans = run?.exitCode === 0 ? (JSON.parse(run.stdout) as Span[] | null) : null
-    } catch {}
-    codes.set(id, spans)
+// Header facts for a data file: its shape, or why it does not parse.
+const describeJson = (text: string, lang: string): string[] => {
+  if (lang === 'jsonc') return ['JSON with comments']
+  try {
+    const value: unknown = JSON.parse(text)
+    if (Array.isArray(value)) return [`array of ${value.length}`]
+    if (value && typeof value === 'object') return [`object, ${Object.keys(value).length} keys`]
+    return [typeof value]
+  } catch (err) {
+    return [`✖ invalid JSON: ${err instanceof Error ? err.message : String(err)}`]
   }
-  return codes.get(id) ?? null
+}
+const describeYaml = (text: string): string[] => {
+  const docs = text.split(/^---\s*$/m).filter(d => d.trim()).length
+  const keys = text.match(/^[^\s#\-][^:#]*:(\s|$)/gm)?.length ?? 0
+  return [docs > 1 ? `${docs} documents` : '', `${keys} top-level keys`]
 }
 
 const mtime = ($: EngineInterface, path: string) => $.fs.stat(path).then(s => s.mtimeMs, () => 0)
@@ -107,13 +106,13 @@ const show = async ($: EngineInterface, path: string) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'md-preview', description: 'Preview a markdown file in a side pane: /md-preview <path>' })
+    await $.command.register({ name: 'preview', description: 'Preview a markdown, JSON or YAML file in a side pane: /preview <path>' })
     return next(e)
   })
 
-  on('command.run', { command: 'md-preview' }, async ($, e) => {
+  on('command.run', { command: 'preview' }, async ($, e) => {
     const arg = e.args.trim()
-    if (!arg) return { text: 'Usage: /md-preview <path.md>' }
+    if (!arg) return { text: 'Usage: /preview <file.md | .json | .yaml>' }
     const path = isAbs(arg) ? arg : `${await $.session.cwd()}/${arg}`
     await show($, path)
     return { text: `Previewing ${arg}` }
@@ -127,7 +126,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Rewrites replies that mention .md files so a click on the link opens the pane.
+  // Rewrites replies that mention previewable files so a click on the link opens the pane.
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     const cwd = await $.session.cwd()
     const found = linkify(e.props.text, cwd).links
@@ -213,28 +212,15 @@ export const register: Register = on => {
       )
     }
 
-    const code = async (lang: string, source: string) => {
-      const spans = lang ? await highlight($, lang, source) : null
-      if (!spans) {
-        // No tree-sitter parser for it: the engine's own highlighter.
-        return (
-          <Box {...frame}>
-            {lang ? <Text dimColor>{lang}</Text> : null}
-            <Code source={source.slice(0, MAX) || ' '} language={lang || undefined} />
-          </Box>
-        )
-      }
-      return (
-        <Box {...frame}>
-          <Text dimColor>{`${lang} · tree-sitter`}</Text>
-          {lines(spans).map(segs => (
-            <Text wrap="wrap">
-              {segs.length ? segs.map(s => <Text color={s.color} italic={s.italic}>{s.text}</Text>) : ' '}
-            </Text>
-          ))}
-        </Box>
-      )
-    }
+    // Claude Code's own highlighter: every language it knows, nothing to install.
+    const code = (lang: string, source: string) => (
+      <Box {...frame}>
+        {lang ? <Text dimColor>{lang}</Text> : null}
+        {chunk(clean(source), MAX, MAX * 3).map(p => (
+          <Code source={p.source || ' '} language={lang || undefined} />
+        ))}
+      </Box>
+    )
 
     // GitHub style: h1/h2 bold with a quiet rule beneath, h3 bold alone.
     const heading = (level: 1 | 2 | 3, title: string) =>
@@ -257,32 +243,63 @@ export const register: Register = on => {
       )
     }
 
-    const all = blocks(text || '_Nothing to preview._')
-    const parts = await Promise.all(
-      all.map(b =>
-        b.kind === 'md'
-          ? <Markdown text={b.text.slice(0, MAX)} />
-          : b.kind === 'heading'
-            ? heading(b.level, b.text)
-            : b.kind === 'callout'
-              ? callout(b.type, b.text)
-              : b.kind === 'table'
-                ? table(b.table)
-                : b.kind === 'code'
-                  ? code(b.lang, b.code)
-                  : mermaid(b.code),
-      ),
-    )
+    // A markdown file: the docs page.
+    const page = async () => {
+      const md = text.length > MD_MAX ? `${text.slice(0, MD_MAX)}\n\n_…truncated_` : text
+      const all = blocks(md || '_Nothing to preview._')
+      const parts = await Promise.all(
+        all.map(b =>
+          b.kind === 'md'
+            ? <Markdown text={b.text.slice(0, MAX)} />
+            : b.kind === 'heading'
+              ? heading(b.level, b.text)
+              : b.kind === 'callout'
+                ? callout(b.type, b.text)
+                : b.kind === 'table'
+                  ? table(b.table)
+                  : b.kind === 'code'
+                    ? code(b.lang, b.code)
+                    : mermaid(b.code),
+        ),
+      )
+      const words = text.split(/\s+/).filter(Boolean).length
+      const count = (kind: Block['kind']) => all.filter(b => b.kind === kind).length
+      const stats = [
+        `${text.split('\n').length} lines`,
+        `${words} words`,
+        `~${Math.max(1, Math.round(words / 220))} min read`,
+        count('table') && `${count('table')} tables`,
+        count('mermaid') && `${count('mermaid')} diagrams`,
+      ]
+      return { stats, body: parts.flat() }
+    }
 
-    const words = text.split(/\s+/).filter(Boolean).length
-    const count = (kind: Block['kind']) => all.filter(b => b.kind === kind).length
-    const stats = [
-      `${text.split('\n').length} lines`,
-      `${words} words`,
-      `~${Math.max(1, Math.round(words / 220))} min read`,
-      count('table') && `${count('table')} tables`,
-      count('mermaid') && `${count('mermaid')} diagrams`,
-    ].filter(Boolean).join('  ·  ')
+    // A JSON or YAML file: the whole source, highlighted and numbered, cut where the
+    // drawing would pass the engine's tree bounds.
+    const dataFile = async (kind: 'json' | 'yaml', lang: string) => {
+      const src = clean(text).replace(/\n$/, '')
+      const total = src.split('\n').length
+      const parts = chunk(src, MAX, DATA_BUDGET)
+      const last = parts.at(-1)
+      const shown = last ? last.startLine - 1 + last.source.split('\n').length : 0
+      const body = [
+        <Box {...frame}>
+          <Text dimColor>{lang}</Text>
+          {parts.map(p => (
+            <Code source={p.source || ' '} language={lang === 'jsonc' ? 'json' : lang} startLine={p.startLine} />
+          ))}
+        </Box>,
+        shown < total ? (
+          <Text dimColor>{`Showing the first ${shown} of ${total} lines; open the file in an editor for the rest.`}</Text>
+        ) : null,
+      ]
+      return { stats: [`${total} lines`, `${(text.length / 1024).toFixed(1)} KB`, ...(kind === 'json' ? describeJson(text, lang) : describeYaml(text))], body }
+    }
+
+    const kind = /\.jsonc?$/i.test(path) ? 'json' : /\.ya?ml$/i.test(path) ? 'yaml' : 'md'
+    const { stats: parts, body } =
+      kind === 'md' ? await page() : await dataFile(kind, /\.jsonc$/i.test(path) ? 'jsonc' : kind)
+    const stats = parts.filter(Boolean).join('  ·  ')
     const crumbs = path.split(/[\\/]/).filter(Boolean)
     const name = crumbs.pop() ?? path
 
@@ -306,7 +323,7 @@ export const register: Register = on => {
         </Box>
         <Text dimColor>{'─'.repeat(Math.max(1, width))}</Text>
         <Box flexDirection="column" rowGap={1} marginTop={1} width={width}>
-          {parts.flat()}
+          {body}
         </Box>
       </Box>
     )

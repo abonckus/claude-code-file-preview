@@ -10,8 +10,18 @@ test('links code spans, markdown links and bare paths', () => {
   expect(r.text).toContain('[`docs/a.md:12`](file:///C:/repo/docs/a.md)')
 })
 
-test('leaves fences, urls and non-md files alone', () => {
-  const src = 'x.ts and https://e.com/a.md\n```\nfoo.md\n```\n'
+test('links JSON and YAML too, longest extension first, sentence-final dots allowed', () => {
+  const r = linkify('Edit `app.jsonc`, package.json and .github/ci.yml or config.yaml.', CWD)
+  expect(r.links).toEqual([
+    'file:///C:/repo/app.jsonc',
+    'file:///C:/repo/package.json',
+    'file:///C:/repo/.github/ci.yml',
+    'file:///C:/repo/config.yaml',
+  ])
+})
+
+test('leaves fences, urls and other files alone', () => {
+  const src = 'x.ts, a.json5 and https://e.com/a.md\n```\nfoo.md\n```\n'
   expect(linkify(src, CWD).links).toEqual([])
 })
 

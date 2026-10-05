@@ -1,0 +1,21 @@
+{
+  "name": "rocket-shop",
+  "version": "1.4.0",
+  "private": true,
+  "description": "A fictional storefront used by the file-preview examples",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "vitest run"
+  },
+  "plans": [
+    { "id": "hobby", "price": 0, "launchesPerMonth": 3 },
+    { "id": "pro", "price": 49, "launchesPerMonth": 50 },
+    { "id": "enterprise", "price": null, "launchesPerMonth": null }
+  ],
+  "features": {
+    "fraudReview": true,
+    "captureOnShip": true,
+    "currencies": ["EUR", "USD", "DKK"]
+  }
+}

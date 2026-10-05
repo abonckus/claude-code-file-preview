@@ -1,9 +1,11 @@
-// Turns .md file references in reply text into file: links, leaving fenced code alone.
-const MD = String.raw`(?:[A-Za-z]:[\\/]|[.~]?[\\/])?[\w.\-\\/ ]*?[\w\-]\.md`
+// Turns references to previewable files (markdown, JSON, YAML) in reply text into
+// file: links, leaving fenced code alone.
+export const PREVIEWABLE = /\.(?:markdown|md|jsonc|json|yaml|yml)$/i
+const FILE = String.raw`(?:[A-Za-z]:[\\/]|[.~]?[\\/])?[\w.\-\\/ ]*?[\w\-]\.(?:markdown|md|jsonc|json|yaml|yml)`
 const TOKEN = new RegExp(
-  String.raw`\[([^\]]*)\]\((${MD})(?:#[^)]*)?\)` + // [label](path.md)
-    String.raw`|\x60(${MD})(:\d+)?\x60` + //            `path.md:12`
-    String.raw`|(?<![\w\\/.\[(\x60:])(${MD.replace(' ', '')})(:\d+)?(?![\w])`, // bare path.md
+  String.raw`\[([^\]]*)\]\((${FILE})(?:#[^)]*)?\)` + // [label](path.md)
+    String.raw`|\x60(${FILE})(:\d+)?\x60` + //            `path.md:12`
+    String.raw`|(?<![\w\\/.\[(\x60:])(${FILE.replace(' ', '')})(:\d+)?(?![\w])`, // bare path.md
   'gi',
 )
 

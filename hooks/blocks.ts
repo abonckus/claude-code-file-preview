@@ -111,3 +111,26 @@ export const fit = (t: Table, columns: number): number[] | null => {
   })
   return widths
 }
+
+// A Code element's source: no control characters but tab and newline.
+export const clean = (s: string) => s.replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
+
+// Splits source into runs of whole lines, each at most `max` characters (a longer
+// line is cut), numbered from where it starts, until `budget` characters are used.
+export const chunk = (src: string, max: number, budget: number): { source: string; startLine: number }[] => {
+  const rows = src.split('\n')
+  const out: { source: string; startLine: number }[] = []
+  let used = 0
+  for (let start = 0; start < rows.length && used < budget; ) {
+    let end = start
+    let len = 0
+    while (end < rows.length && len + Math.min((rows[end] ?? '').length, max - 1) + 1 <= max) {
+      len += Math.min((rows[end] ?? '').length, max - 1) + 1
+      end++
+    }
+    out.push({ source: rows.slice(start, end).map(r => r.slice(0, max - 1)).join('\n'), startLine: start + 1 })
+    used += len
+    start = end
+  }
+  return out
+}

@@ -1,0 +1,20 @@
+# A fictional CI workflow used by the file-preview examples
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npm test
+---
+# A second document in the same file
+name: release
+on:
+  workflow_dispatch: {}

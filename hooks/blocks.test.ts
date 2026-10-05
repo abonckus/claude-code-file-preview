@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { blocks, fit } from './blocks'
+import { blocks, chunk, clean, fit } from './blocks'
 
 const DOC = [
   '# Title',
@@ -52,4 +52,16 @@ test('fits columns: natural when room, shrinks wide ones, cards when hopeless', 
   expect(fit(table, 40)).toEqual([4, 30])
   const wide = { head: Array(12).fill('col'), align: Array(12).fill('left'), rows: [] }
   expect(fit(wide, 40)).toBe(null)
+})
+
+test('chunks source into numbered runs of whole lines that fit, cutting overlong lines', () => {
+  expect(chunk('a\nbb\nccc', 5, 100)).toEqual([
+    { source: 'a\nbb', startLine: 1 },
+    { source: 'ccc', startLine: 3 },
+  ])
+  expect(chunk('x'.repeat(12), 5, 100)).toEqual([{ source: 'xxxx', startLine: 1 }])
+  // the budget stops it once used: one chunk of two lines spends 4 of 4, a second needs 5
+  expect(chunk('a\nb\nc\nd', 4, 4).map(c => c.startLine)).toEqual([1])
+  expect(chunk('a\nb\nc\nd', 4, 5).map(c => c.startLine)).toEqual([1, 3])
+  expect(clean('a\r\nb\x07c\td')).toBe('a\nbc\td')
 })
