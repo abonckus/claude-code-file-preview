@@ -16,13 +16,15 @@ export const SECTIONS = [
   ['chore', 'Maintenance'],
 ]
 
+const TYPES = new Set(SECTIONS.map(([type]) => type))
 const HEADER = /^(?<type>[a-z]+)(?:\((?<scope>[^)]+)\))?(?<bang>!)?:\s*(?<desc>.+)$/i
 
 // One commit, as `git log` gives it, to { type, scope, desc, breaking }.
 export const parse = (subject, body = '') => {
   const m = HEADER.exec(subject.trim())
   const breaking = Boolean(m?.groups.bang) || /^BREAKING[ -]CHANGE:/m.test(body)
-  if (!m) return { type: 'other', scope: null, desc: subject.trim(), breaking }
+  // Only a known type counts: `README: …` or `Search: …` is a plain subject, kept whole.
+  if (!m || !TYPES.has(m.groups.type.toLowerCase())) return { type: 'other', scope: null, desc: subject.trim(), breaking }
   return { type: m.groups.type.toLowerCase(), scope: m.groups.scope ?? null, desc: m.groups.desc.trim(), breaking }
 }
 
