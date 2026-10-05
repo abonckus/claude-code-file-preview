@@ -13,7 +13,9 @@ Mention a `.md`, `.json` or `.yaml` file in a conversation and Claude's reply tu
 - **Mermaid diagrams.** Drawn as box-drawing text by [mermaid-ascii](https://github.com/AlexanderGrooff/mermaid-ascii). Diagram types it does not support show their source, with the reason.
 - **JSON and YAML files.** Shown as numbered, highlighted source. The header gives the file's shape (`object, 12 keys`, `array of 340`, or `✖ invalid JSON:` and the parser's message; documents and top-level keys for YAML). A file too long to draw is cut cleanly, with a note.
 - **Syntax highlighting.** Code blocks and data files use Claude Code's own highlighter, so any language that highlighter knows is coloured to match your theme, with nothing to install. A language it does not know is drawn plain.
-- **Live reload.** The file is checked every 1.5 s and reloaded when it changes, with a toast to say so. There is also a **↻ Refresh** button (`r` while the pane has focus).
+- **Live reload.** The file is checked every 1.5 s and reloaded when it changes, with a toast to say so. There is also a **↻ Refresh** button.
+- **Search.** **⌕ Search** opens a fuzzy search over the file: type a few letters in order (`crlim` finds *Credit Limit*), the best matches list under the field, Enter jumps to the first, and each match is a button that scrolls to it.
+- **↑ Top** scrolls back to the start.
 - **`/preview <path>`** opens any file by hand.
 
 ## Requirements
@@ -36,6 +38,23 @@ claude --plugin-dir ./claude-code-file-preview
 To load it in every session, add the folder to `CLAUDE_CODE_PLUGIN_DIRS`.
 
 Then ask Claude about a markdown file, or run `/preview examples/sample.md` (also `examples/sample.json` and `examples/sample.yaml`).
+
+## Keys
+
+While the pane has the keyboard (click it, or `ctrl+x tab` from the prompt):
+
+| Key | Does |
+|:--|:--|
+| `u` | Scroll to the top |
+| `s` | Open search |
+| `r` | Refresh |
+| `up` / `down`, `pageup` / `pagedown`, `home` / `end` | Scroll (Claude Code's own pane keys) |
+
+A pane button's hotkey must be one letter or digit, so search cannot be `/`. For vim-style scrolling, add to `~/.claude/keybindings.json`:
+
+```json
+{ "context": "Pane", "bindings": { "j": "pane:scrollDown", "k": "pane:scrollUp" } }
+```
 
 ## External highlighters
 
@@ -70,7 +89,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-The pure logic lives in `hooks/blocks.ts` (markdown splitting, table fitting, code chunking), `hooks/linkify.ts` (file links) and `hooks/highlighters.ts` (the highlighter setting and capture colours), each with its own `*.test.ts`. `hooks/pane.test.ts` mounts the pane and checks the drawn tree for markdown, JSON and YAML files, the file watcher and the refresh button.
+The pure logic lives in `hooks/blocks.ts` (markdown splitting, table fitting, code chunking), `hooks/linkify.ts` (file links), `hooks/highlighters.ts` (the highlighter setting and capture colours) and `hooks/search.ts` (fuzzy search), each with its own `*.test.ts`. `hooks/pane.test.ts` mounts the pane and checks the drawn tree for markdown, JSON and YAML files, the file watcher and the refresh button.
 
 ## License
 

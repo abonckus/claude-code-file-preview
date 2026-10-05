@@ -1,12 +1,13 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Doc } from '../types'
+import type { Doc, Find } from '../types'
 import { linkify, toPath } from './linkify'
-import { blocks, chunk, clean, fit, GAP } from './blocks'
+import { blocks, chunk, clean, fit, GAP, plain } from './blocks'
 import type { Align, Block, Callout, Table } from './blocks'
 import { lines, parse, spansOf } from './highlighters'
 import type { Span } from './highlighters'
+import { search } from './search'
 
 const PANE = 'file-preview'
 const MAX = 10000 // Markdown element cap, per prose block
@@ -25,7 +26,17 @@ const CALLOUTS = {
 } as const satisfies Record<Callout, { color: string; icon: string; label: string }>
 const isAbs =(p: string) => /^([A-Za-z]:)?[\\/]/.test(p)
 const doc = atom({ plugin: 'file-preview', key: 'doc' } as const, { path: '', text: '', mtime: 0 } as Doc)
+const find = atom({ plugin: 'file-preview', key: 'find' } as const, { open: false, query: '' } as Find)
 const WATCH_MS = 1500
+
+// A block's searchable lines, as plain text.
+const blockLines = (b: Block): string[] =>
+  (b.kind === 'table'
+    ? [b.table.head, ...b.table.rows].map(r => r.join(' | '))
+    : (b.kind === 'code' || b.kind === 'mermaid' ? b.code : b.text).split('\n').map(plain)
+  )
+    .map(l => l.trim())
+    .filter(Boolean)
 
 // ponytail: module cache, lost on reload; fine, a redraw re-renders
 // Successes only: a failure is retried on the next draw and says why.
@@ -168,7 +179,9 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Markdown, Code, Button } = $.ui.resolve(e)
+    const els = $.ui.resolve(e)
+    const { Box, Text, Markdown, Code, Button } = els
+    const Input = 'Input' in els ? els.Input : null // mobile draws no fields: no search there
     const { path, text } = await read($, doc)
     const cols = e.props.bodyColumns
     const width = Math.min(Math.max(20, cols - 2 * PAD), READ_MAX)
@@ -180,10 +193,10 @@ export const register: Register = (on, options) => {
         // Too many columns for the pane: one card per row, `header: value` lines.
         return t.rows.map(row => (
           <Box {...frame}>
-            {t.head.map((h, j) => (
+            {t.head.map((name, j) => (
               <Box flexDirection="row">
                 <Box flexShrink={0}>
-                  <Text bold color="cyan">{`${h}: `}</Text>
+                  <Text bold color="cyan">{`${name}: `}</Text>
                 </Box>
                 <Text wrap="wrap">{row[j] ?? ''}</Text>
               </Box>
@@ -305,7 +318,8 @@ export const register: Register = (on, options) => {
         count('table') && `${count('table')} tables`,
         count('mermaid') && `${count('mermaid')} diagrams`,
       ]
-      return { stats, body: parts.flat() }
+      const entries = all.flatMap((b, i) => blockLines(b).map(line => ({ block: i, text: line })))
+      return { stats, body: parts.map((p, i) => <Box key={`b:${i}`} flexDirection="column">{p}</Box>), entries }
     }
 
     // A JSON or YAML file: the whole source, highlighted and numbered, cut where the
@@ -319,23 +333,58 @@ export const register: Register = (on, options) => {
       const body = [
         <Box {...frame}>
           <Text dimColor>{lang}</Text>
-          {parts.map(p => (
-            <Code source={p.source || ' '} language={lang === 'jsonc' ? 'json' : lang} startLine={p.startLine} />
+          {parts.map((p, i) => (
+            <Box key={`b:${i}`} flexDirection="column">
+              <Code source={p.source || ' '} language={lang === 'jsonc' ? 'json' : lang} startLine={p.startLine} />
+            </Box>
           ))}
         </Box>,
         shown < total ? (
           <Text dimColor>{`Showing the first ${shown} of ${total} lines; open the file in an editor for the rest.`}</Text>
         ) : null,
       ]
-      return { stats: [`${total} lines`, `${(text.length / 1024).toFixed(1)} KB`, ...(kind === 'json' ? describeJson(text, lang) : describeYaml(text))], body }
+      const entries = parts.flatMap((p, i) =>
+        p.source.split('\n').map((line, j) => ({ block: i, text: `${p.startLine + j}: ${line.trim()}` })),
+      )
+      return { stats: [`${total} lines`, `${(text.length / 1024).toFixed(1)} KB`, ...(kind === 'json' ? describeJson(text, lang) : describeYaml(text))], body, entries }
     }
 
     const kind = /\.jsonc?$/i.test(path) ? 'json' : /\.ya?ml$/i.test(path) ? 'yaml' : 'md'
-    const { stats: parts, body } =
+    const { stats: parts, body, entries } =
       kind === 'md' ? await page() : await dataFile(kind, /\.jsonc$/i.test(path) ? 'jsonc' : kind)
     const stats = parts.filter(Boolean).join('  ·  ')
     const crumbs = path.split(/[\\/]/).filter(Boolean)
     const name = crumbs.pop() ?? path
+
+    // Search: the query lives in state, so typing redraws the hits.
+    const { open: isSearching, query } = await read($, find)
+    const hits = isSearching ? search(query, entries) : []
+    // A refused scroll or focus (the pane not holding the keys) is not an error worth a throw.
+    const jump = (block: number) => $.ui.scroll({ to: { key: `b:${block}` }, in: PANE, block: 'start' }).catch(() => {})
+    const searchRow = isSearching && Input ? (
+      <Box flexDirection="column" width={width} marginTop={1}>
+        <Box flexDirection="row" columnGap={1}>
+          <Box flexGrow={1}>
+            <Input
+              key="search"
+              autoFocus
+              placeholder="Fuzzy search…"
+              value={query}
+              onInput={(value: string) => void update($, find, f => ({ ...f, query: value }))}
+              onSubmit={(value: string) => {
+                const [first] = search(value, entries, 1)
+                if (first) void jump(first.block)
+              }}
+            />
+          </Box>
+          <Button key="close-search" label="✕" onPress={() => update($, find, () => ({ open: false, query: '' }))} />
+        </Box>
+        <Text dimColor>{query ? `${hits.length === 8 ? '8+' : hits.length} matches; Enter jumps to the first` : 'Type to search; Enter jumps to the best match'}</Text>
+        {hits.map((hit, k) => (
+          <Button key={`hit:${k}`} plain label={hit.text.length > width - 4 ? `${hit.text.slice(0, width - 5)}…` : hit.text} onPress={() => jump(hit.block)} />
+        ))}
+      </Box>
+    ) : null
 
     return (
       <Box flexDirection="column" paddingX={PAD}>
@@ -345,16 +394,29 @@ export const register: Register = (on, options) => {
         </Box>
         <Box flexDirection="row" justifyContent="space-between" width={width}>
           <Text dimColor>{stats}</Text>
-          <Button
-            key="refresh"
-            label="↻ Refresh"
-            hotkey="r"
-            onPress={async () => {
-              await load($, path)
-              $.ui.toast('Preview refreshed')
-            }}
-          />
+          <Box flexDirection="row" columnGap={1}>
+            <Button key="top" label="↑ Top" hotkey="u" onPress={() => $.ui.scroll({ to: 'start', in: PANE }).catch(() => {})} />
+            {Input ? <Button
+              key="find"
+              label="⌕ Search"
+              hotkey="s"
+              onPress={async () => {
+                await update($, find, f => ({ ...f, open: true }))
+                await $.ui.focus({ requestId: PANE, key: 'search' }).catch(() => {})
+              }}
+            /> : null}
+            <Button
+              key="refresh"
+              label="↻ Refresh"
+              hotkey="r"
+              onPress={async () => {
+                await load($, path)
+                $.ui.toast('Preview refreshed')
+              }}
+            />
+          </Box>
         </Box>
+        {searchRow}
         <Text dimColor>{'─'.repeat(Math.max(1, width))}</Text>
         <Box flexDirection="column" rowGap={1} marginTop={1} width={width}>
           {body}

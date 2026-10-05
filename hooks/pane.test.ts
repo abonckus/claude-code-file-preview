@@ -152,3 +152,49 @@ test('a highlighter that fails, or answers spans that do not match, falls back t
   expect((await ui.find({ type: 'Code' }))?.props).toEqual({ source: 'codeunit 1 "X" { }', language: 'al' })
   await ui.unmount()
 })
+
+test('search opens with the cursor in it, ranks fuzzy hits as you type, and closes', async ($, on) => {
+  on('session.cwd', () => ({ value: 'C:/repo' }))
+  on('fs.read', () => ({ value: DOC }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 1, isLink: false } as never }))
+  on('ui.open', () => ({ value: { isPlaced: true } as never }))
+  on('process.run', () => ran('A ──► B'))
+  await open($, 'C:/repo/docs/guide.md')
+  const ui = await mountPane($)
+  for (const key of ['top', 'find', 'refresh']) expect([key, (await ui.find({ key })) !== undefined]).toEqual([key, true])
+
+  // the scroll needs a laid-out pane; here it is refused, and the press must not throw
+  await ui.press({ key: 'top' })
+
+  expect(await ui.find({ key: 'search' })).toBeUndefined()
+  await ui.press({ key: 'find' })
+  expect(await ui.find({ key: 'search' })).toBeDefined()
+  expect((await ui.find({ key: 'search' }))?.props.autoFocus).toBe(true)
+
+  await ui.input({ key: 'search', text: 'tbls', kind: 'change' })
+  expect((await ui.find({ key: 'hit:0' }))?.props.label).toBe('Tables')
+  await ui.press({ key: 'hit:0' })
+  await ui.input({ key: 'search', text: 'tbls' })
+
+  await ui.input({ key: 'search', text: 'zzzz', kind: 'change' })
+  expect(await ui.find({ key: 'hit:0' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^0 matches/ })).toBeDefined()
+
+  await ui.press({ key: 'close-search' })
+  expect(await ui.find({ key: 'search' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a table too wide for the pane is drawn as one card per row', async ($, on) => {
+  const head = Array.from({ length: 20 }, (_, i) => `Column${i}`)
+  const wide = `| ${head.join(' | ')} |\n|${head.map(() => '---').join('|')}|\n| ${head.map((_, i) => `v${i}`).join(' | ')} |\n`
+  on('session.cwd', () => ({ value: 'C:/repo' }))
+  on('fs.read', () => ({ value: wide }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 1, isLink: false } as never }))
+  on('ui.open', () => ({ value: { isPlaced: true } as never }))
+  await open($, 'C:/repo/wide.md')
+  const ui = await mountPane($)
+  expect(await ui.find({ type: 'Text', text: 'Column19: ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'v19' })).toBeDefined()
+  await ui.unmount()
+})
