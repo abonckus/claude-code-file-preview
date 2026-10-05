@@ -39,7 +39,7 @@ Then ask Claude about a markdown file, or run `/preview examples/sample.md` (als
 
 ## External highlighters
 
-Claude Code's highlighter does not know every language. For one it does not, point file-preview at any command that can highlight it, with the **External highlighters** setting (a row in `/config`, or `pluginConfigs` in `settings.json`):
+Claude Code's highlighter does not know every language. For one it does not, point file-preview at any command that can highlight it, with the `highlighters` option in `~/.claude/settings.json`, under `pluginConfigs` and the plugin's id (`file-preview`, or `file-preview@inline` when loaded with `--plugin-dir`):
 
 ```json
 "pluginConfigs": {
