@@ -5,6 +5,8 @@ import type { Doc } from '../types'
 import { linkify, toPath } from './linkify'
 import { blocks, chunk, clean, fit, GAP } from './blocks'
 import type { Align, Block, Callout, Table } from './blocks'
+import { lines, parse, spansOf } from './highlighters'
+import type { Span } from './highlighters'
 
 const PANE = 'file-preview'
 const MAX = 10000 // Markdown element cap, per prose block
@@ -66,6 +68,22 @@ const describeYaml = (text: string): string[] => {
   return [docs > 1 ? `${docs} documents` : '', `${keys} top-level keys`]
 }
 
+// The `highlighters` setting, read at load (a change reloads the module).
+let highlighters = new Map<string, string[]>()
+const CODE_BUDGET = 40_000 // serialized characters of one coloured block; past it, Code draws it
+
+// Successes only, by command and source: a failing highlighter is tried again on the next draw.
+const highlighted = new Map<string, Span[]>()
+const external = async ($: EngineInterface, cmd: string[], source: string): Promise<Span[] | null> => {
+  const id = `${cmd.join('\0')}\n${source}`
+  const hit = highlighted.get(id)
+  if (hit) return hit
+  const run = await $.process.run(cmd, { stdin: source, timeoutMs: 15_000 }).catch(() => null)
+  const spans = run?.exitCode === 0 ? spansOf(run.stdout, source) : null
+  if (spans) highlighted.set(id, spans)
+  return spans
+}
+
 const mtime = ($: EngineInterface, path: string) => $.fs.stat(path).then(s => s.mtimeMs, () => 0)
 
 const load = async ($: EngineInterface, path: string) => {
@@ -104,7 +122,9 @@ const show = async ($: EngineInterface, path: string) => {
   watch($)
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  highlighters = parse(Array.isArray(options.highlighters) ? options.highlighters : [])
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'preview', description: 'Preview a markdown, JSON or YAML file in a side pane: /preview <path>' })
     return next(e)
@@ -213,14 +233,28 @@ export const register: Register = on => {
     }
 
     // Claude Code's own highlighter: every language it knows, nothing to install.
-    const code = (lang: string, source: string) => (
-      <Box {...frame}>
-        {lang ? <Text dimColor>{lang}</Text> : null}
-        {chunk(clean(source), MAX, MAX * 3).map(p => (
-          <Code source={p.source || ' '} language={lang || undefined} />
-        ))}
-      </Box>
-    )
+    // A highlighter from the `highlighters` setting for this language, else Claude
+    // Code's own: every language it knows, nothing to install.
+    const code = async (lang: string, source: string) => {
+      const src = clean(source)
+      const cmd = highlighters.get(lang.toLowerCase())
+      const spans = cmd && src.length <= MAX ? await external($, cmd, src) : null
+      const rows = spans
+        ? lines(spans).map(segs => (
+            <Text wrap="wrap">
+              {segs.length ? segs.map(s => (s.color || s.italic ? <Text color={s.color} italic={s.italic}>{s.text}</Text> : s.text)) : ' '}
+            </Text>
+          ))
+        : null
+      return (
+        <Box {...frame}>
+          {lang ? <Text dimColor>{lang}</Text> : null}
+          {rows && JSON.stringify(rows).length <= CODE_BUDGET
+            ? rows
+            : chunk(src, MAX, MAX * 3).map(p => <Code source={p.source || ' '} language={lang || undefined} />)}
+        </Box>
+      )
+    }
 
     // GitHub style: h1/h2 bold with a quiet rule beneath, h3 bold alone.
     const heading = (level: 1 | 2 | 3, title: string) =>

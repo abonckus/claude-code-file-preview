@@ -37,6 +37,24 @@ To load it in every session, add the folder to `CLAUDE_CODE_PLUGIN_DIRS`.
 
 Then ask Claude about a markdown file, or run `/preview examples/sample.md` (also `examples/sample.json` and `examples/sample.yaml`).
 
+## External highlighters
+
+Claude Code's highlighter does not know every language. For one it does not, point file-preview at any command that can highlight it, with the **External highlighters** setting (a row in `/config`, or `pluginConfigs` in `settings.json`):
+
+```json
+"pluginConfigs": {
+  "file-preview": {
+    "options": {
+      "highlighters": ["al: node \"/path/to/claude-code-al-syntax/highlighter/highlight.mjs\""]
+    }
+  }
+}
+```
+
+Each entry is `<language>[, <language>…]: <command> [args…]`, the language being the code fence's name; double quotes group a path with spaces. For each code block in that language, the command is run with the code on stdin and must write a JSON array of `[text, capture]` spans to stdout, `capture` being a tree-sitter highlight name such as `keyword.control` or `comment.line`, or `null`. The spans must join back into the code. Anything else (a non-zero exit, other output) and the block is drawn by Claude Code's highlighter instead.
+
+[al-syntax](https://github.com/abonckus/claude-code-al-syntax) ships such a command for AL, built on tree-sitter.
+
 ## Limitations
 
 - **Clicks need the fullscreen layout.** A plain click only reaches the mod in Claude Code's fullscreen terminal layout. Elsewhere, or with ctrl- or alt-click, links open the usual way, so use `/preview` there.
@@ -52,7 +70,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-The pure logic lives in `hooks/blocks.ts` (markdown splitting, table fitting, code chunking) and `hooks/linkify.ts` (file links), each with its own `*.test.ts`. `hooks/pane.test.ts` mounts the pane and checks the drawn tree for markdown, JSON and YAML files, the file watcher and the refresh button.
+The pure logic lives in `hooks/blocks.ts` (markdown splitting, table fitting, code chunking), `hooks/linkify.ts` (file links) and `hooks/highlighters.ts` (the highlighter setting and capture colours), each with its own `*.test.ts`. `hooks/pane.test.ts` mounts the pane and checks the drawn tree for markdown, JSON and YAML files, the file watcher and the refresh button.
 
 ## License
 

@@ -120,3 +120,35 @@ test('YAML counts documents and top-level keys', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /2 documents  ·  3 top-level keys/ })).toBeDefined()
   await ui.unmount()
 })
+
+const AL_DOC = '# AL\n```al\ncodeunit 1 "X" { }\n```\n'
+
+test('a configured highlighter colours its language; others keep the built-in one', { options: { highlighters: ['al: node "C:/tools/al highlight.mjs"'] } }, async ($, on) => {
+  const seen: string[][] = []
+  on('session.cwd', () => ({ value: 'C:/repo' }))
+  on('fs.read', () => ({ value: AL_DOC }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 1, isLink: false } as never }))
+  on('ui.open', () => ({ value: { isPlaced: true } as never }))
+  on('process.run', (_$, e) => {
+    seen.push([...e.argv])
+    return ran(JSON.stringify([['codeunit', 'keyword.type'], [' 1 ', null], ['"X"', 'type.definition'], [' { }', null]]))
+  })
+  await open($, 'C:/repo/al.md')
+  const ui = await mountPane($)
+  expect(seen).toEqual([['node', 'C:/tools/al highlight.mjs']])
+  expect((await ui.find({ type: 'Text', text: /^codeunit$/ }))?.props.color).toBe('#ff7b72')
+  expect(await ui.find({ type: 'Code' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a highlighter that fails, or answers spans that do not match, falls back to Code', { options: { highlighters: ['al: node broken.mjs'] } }, async ($, on) => {
+  on('session.cwd', () => ({ value: 'C:/repo' }))
+  on('fs.read', () => ({ value: AL_DOC }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 1, isLink: false } as never }))
+  on('ui.open', () => ({ value: { isPlaced: true } as never }))
+  on('process.run', () => ran('[["something else", null]]'))
+  await open($, 'C:/repo/al.md')
+  const ui = await mountPane($)
+  expect((await ui.find({ type: 'Code' }))?.props).toEqual({ source: 'codeunit 1 "X" { }', language: 'al' })
+  await ui.unmount()
+})

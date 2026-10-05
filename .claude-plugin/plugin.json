@@ -2,8 +2,19 @@
   "name": "file-preview",
   "version": "0.1.0",
   "description": "Click a markdown, JSON or YAML file link in a reply to preview it in a side pane, drawn like a docs page",
-  "author": { "name": "Artūras Bončkus" },
+  "author": {
+    "name": "Artūras Bončkus"
+  },
   "repository": "https://github.com/abonckus/claude-code-file-preview",
   "license": "MIT",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "highlighters": {
+      "type": "string",
+      "multiple": true,
+      "title": "External highlighters",
+      "description": "One entry per command, as `<language>[, <language>…]: <command> [args…]` (double quotes group a path with spaces). The command gets the code on stdin and writes JSON [text, capture] spans (tree-sitter capture names). Languages without an entry use Claude Code's own highlighter.",
+      "default": []
+    }
+  }
 }
