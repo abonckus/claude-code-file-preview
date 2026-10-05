@@ -197,12 +197,13 @@ export const register: Register = (on, options) => {
   // one opens the pane; the others are left to the surface, which opens them as usual.
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     const cwd = await $.session.cwd()
-    const found = linkify(e.props.text, cwd).links
+    const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+    const found = linkify(e.props.text, cwd, undefined, home).links
     if (found.length === 0) return next(e)
     const exists = await Promise.all(
       found.map(url => $.fs.stat(toPath(url)).then(s => s.kind === 'file', () => false)),
     )
-    const { text, links } = linkify(e.props.text, cwd, new Set(found.filter((_, i) => exists[i])))
+    const { text, links } = linkify(e.props.text, cwd, new Set(found.filter((_, i) => exists[i])), home)
     if (links.length === 0 || text.length > MAX) return next(e)
     const { Markdown } = $.ui.resolve(e)
     return (

@@ -37,6 +37,11 @@ test('keeps only the files it is told exist', () => {
   expect(r.text).toBe('`a.md` and [`b.md`](file:///C:/repo/b.md)')
 })
 
+test('resolves ~/ against the home folder', () => {
+  const r = linkify('Edit `~/.claude/settings.json` and ~/notes.md', CWD, undefined, String.raw`C:\Users\me`)
+  expect(r.links).toEqual(['file:///C:/Users/me/.claude/settings.json', 'file:///C:/Users/me/notes.md'])
+})
+
 test('round-trips paths with spaces', () => {
   const [url] = linkify('`my notes.md`', String.raw`C:\a b`).links
   expect(toPath(url ?? '')).toBe('C:/a b/my notes.md')

@@ -13,8 +13,10 @@ const TOKEN = new RegExp(
 
 const BS = String.fromCharCode(92) // backslash
 
-export const toUrl =(path: string, cwd: string): string => {
-  const p = path.split(BS).join('/')
+// `~/` resolves against `home`; without one it stays relative and will not exist.
+export const toUrl =(path: string, cwd: string, home?: string): string => {
+  const slashed = path.split(BS).join('/')
+  const p = home && slashed.startsWith('~/') ? `${home.split(BS).join('/').replace(/\/$/, '')}${slashed.slice(1)}` : slashed
   const abs = /^([A-Za-z]:)?\//.test(p) ? p : `${cwd.split(BS).join('/').replace(/\/$/, '')}/${p.replace(/^\.\//, '')}`
   return encodeURI(`file://${abs.startsWith('/') ? '' : '/'}${abs}`)
 }
@@ -25,10 +27,10 @@ export const toPath = (href: string): string => {
 }
 
 // `keep` limits the links to those urls (files known to exist); absent, every match links.
-export const linkify = (text: string, cwd: string, keep?: Set<string>): { text: string; links: string[] } => {
+export const linkify = (text: string, cwd: string, keep?: Set<string>, home?: string): { text: string; links: string[] } => {
   const links: string[] = []
   const link = (match: string, label: string, path: string) => {
-    const url = toUrl(path, cwd)
+    const url = toUrl(path, cwd, home)
     if (keep && !keep.has(url)) return match
     links.push(url)
     return `[${label}](${url})`
