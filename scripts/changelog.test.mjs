@@ -8,6 +8,7 @@ test('parses type, scope, breaking marks; anything else is "other"', () => {
   assert.equal(parse('fix!: drop the old setting').breaking, true)
   assert.equal(parse('refactor: x', 'BREAKING CHANGE: the noun is gone').breaking, true)
   assert.deepEqual(parse('Add a thing'), { type: 'other', scope: null, desc: 'Add a thing', breaking: false })
+  assert.deepEqual(parse('README: say where the option is set'), { type: 'other', scope: null, desc: 'README: say where the option is set', breaking: false })
 })
 
 test('groups by type in a fixed order, breaking first, unknown last, with links', () => {
