@@ -1,0 +1,57 @@
+name: Release
+
+# Push a tag matching the plugin.json version (v0.2.0 for "version": "0.2.0") to
+# publish a GitHub release: the changelog since the previous tag, grouped by
+# Conventional Commit type, and the plugin as a zip.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the previous tag and the commits since it
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the tag matches plugin.json
+        run: |
+          version=$(node -p "require('./.claude-plugin/plugin.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match plugin.json version $version"
+            exit 1
+          fi
+
+      - name: Install Claude Code
+        run: npm install --global @anthropic-ai/claude-code
+
+      - name: Validate and test
+        run: |
+          claude plugin validate .
+          claude plugin test .
+
+      - name: Write the changelog
+        run: |
+          previous=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          node scripts/changelog.mjs "$previous" "$GITHUB_REF_NAME" > notes.md
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package the plugin
+        run: |
+          name=$(node -p "require('./.claude-plugin/plugin.json').name")
+          git archive --format=zip --prefix="$name/" -o "$name-$GITHUB_REF_NAME.zip" "$GITHUB_REF_NAME"
+          echo "ZIP=$name-$GITHUB_REF_NAME.zip" >> "$GITHUB_ENV"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md "$ZIP"

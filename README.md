@@ -96,6 +96,18 @@ claude plugin test .
 
 The pure logic lives in `hooks/blocks.ts` (markdown splitting, table fitting, code chunking), `hooks/linkify.ts` (file links), `hooks/highlighters.ts` (the highlighter setting and capture colours) and `hooks/search.ts` (fuzzy search), each with its own `*.test.ts`. `hooks/pane.test.ts` mounts the pane and checks the drawn tree for markdown, JSON and YAML files, the file watcher and the refresh button.
 
+## Releasing
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `feat: …`, `fix: …`, `docs: …`, `refactor: …`, `perf: …`, `test: …`, `ci: …`, `chore: …`, with an optional scope (`feat(search): …`) and `!` for a breaking change. The release notes group commits by that type; others are listed under *Other changes*.
+
+To release, bump `version` in `.claude-plugin/plugin.json` through a pull request, then tag the merge commit:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The Release workflow checks the tag matches the version, validates and tests the plugin, writes the changelog since the previous tag, and publishes a GitHub release with the plugin as a zip.
+
 ## License
 
 [MIT](LICENSE)
