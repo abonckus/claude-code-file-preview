@@ -1,7 +1,9 @@
-// Turns references to previewable files (markdown, JSON, YAML) in reply text into
-// file: links, leaving fenced code alone.
+// Turns file references in reply text into file: links, leaving fenced code alone.
+// Any `name.ext` matches; the caller keeps only files that exist. Previewable ones
+// (markdown, JSON, YAML) open the pane, the rest open the way the surface opens links.
 export const PREVIEWABLE = /\.(?:markdown|md|jsonc|json|yaml|yml)$/i
-const FILE = String.raw`(?:[A-Za-z]:[\\/]|[.~]?[\\/])?[\w.\-\\/ ]*?[\w\-]\.(?:markdown|md|jsonc|json|yaml|yml)`
+// ponytail: extensionless files (Makefile, LICENSE) are not matched, or every bare word would be a candidate
+const FILE = String.raw`(?:[A-Za-z]:[\\/]|[.~]?[\\/])?[\w.\-\\/ ]*[\w\-]\.[A-Za-z][A-Za-z0-9]*`
 const TOKEN = new RegExp(
   String.raw`\[([^\]]*)\]\((${FILE})(?:#[^)]*)?\)` + // [label](path.md)
     String.raw`|\x60(${FILE})(:\d+)?\x60` + //            `path.md:12`
