@@ -72,13 +72,13 @@ test('the pane draws a valid docs page: header, callout, table, diagram, code', 
   await ui.unmount()
 })
 
-const mountPane = ($: Engine, rows = 80) =>
+const mountPane = ($: Engine, rows = 80, isFocused = true) =>
   $.ui.mount({
     plugin: 'file-preview',
     surface: 'terminal',
     component: 'Pane',
     requestId: 'file-preview',
-    props: { title: 'x', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: rows } as never, view: {} },
+    props: { title: 'x', isFocused, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: rows } as never, view: {} },
   })
 
 const open = ($: Engine, args: string) =>
@@ -170,14 +170,24 @@ test('search opens with the cursor in it, ranks fuzzy hits as you type, and clos
   await ui.press({ key: 'find' })
   expect(await ui.find({ key: 'search' })).toBeDefined()
   expect((await ui.find({ key: 'search' }))?.props.autoFocus).toBe(true)
-  // while searching, Search gives way to Close on q, after the hits in the focus order
+  // while searching, Search gives way to Close, after the hits in the focus order
   expect(await ui.find({ key: 'find' })).toBeUndefined()
-  expect((await ui.find({ key: 'close-search' }))?.props.hotkey).toBe('q')
+  expect(await ui.find({ key: 'close-search' })).toBeDefined()
 
   await ui.input({ key: 'search', text: 'tbls', kind: 'change' })
   expect((await ui.find({ key: 'hit:0' }))?.props.label).toBe('Tables')
+  // a jump highlights its block until the person does anything else
+  const block4 = async () => (await ui.find({ key: 'b:4' }))?.props.backgroundColor
+  expect(await block4()).toBeUndefined()
   await ui.press({ key: 'hit:0' })
+  expect(await block4()).toBe('#1f3a5f')
+  await ui.press({ key: 'top' })
+  expect(await block4()).toBeUndefined()
   await ui.input({ key: 'search', text: 'tbls' })
+  expect(await block4()).toBe('#1f3a5f')
+  await ui.input({ key: 'search', text: 'tbl', kind: 'change' })
+  expect(await block4()).toBeUndefined()
+  await ui.input({ key: 'search', text: 'tbls', kind: 'change' })
 
   await ui.input({ key: 'search', text: 'zzzz', kind: 'change' })
   expect(await ui.find({ key: 'hit:0' })).toBeUndefined()
@@ -220,4 +230,31 @@ test('the buttons sit in a footer on the window\'s last rows, growing upwards fo
   await ui.input({ key: 'search', text: 'tbls', kind: 'change' })
   expect((await footer())?.props.top).toBe(25) // + one hit
   await ui.unmount()
+})
+
+test('Esc, which hands the keyboard back to the prompt, hides the search and resets it', async ($, on) => {
+  const clock = mock.clock(on)
+  on('session.cwd', () => ({ value: 'C:/repo' }))
+  on('fs.read', () => ({ value: DOC }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 1, isLink: false } as never }))
+  on('ui.open', () => ({ value: { isPlaced: true } as never }))
+  on('process.run', () => ran('A ──► B'))
+  await open($, 'C:/repo/docs/guide.md')
+  const focused = await mountPane($)
+  await focused.press({ key: 'find' })
+  await focused.input({ key: 'search', text: 'tbls', kind: 'change' })
+  expect(await focused.find({ key: 'search' })).toBeDefined()
+  await focused.unmount()
+
+  // the same pane, drawn after the keys went back to the prompt
+  const left = await mountPane($, 80, false)
+  expect(await left.find({ key: 'search' })).toBeUndefined()
+  expect(await left.find({ key: 'find' })).toBeDefined()
+  await clock.advance(1)
+  await left.unmount()
+
+  // taking the keys again does not bring the old search back
+  const again = await mountPane($)
+  expect(await again.find({ key: 'search' })).toBeUndefined()
+  await again.unmount()
 })

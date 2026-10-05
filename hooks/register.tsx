@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Doc, Find, View } from '../types'
+import type { Doc, Find, Mark, View } from '../types'
 import { linkify, toPath } from './linkify'
 import { blocks, chunk, clean, fit, GAP, plain } from './blocks'
 import type { Align, Block, Callout, Table } from './blocks'
@@ -27,9 +27,17 @@ const CALLOUTS = {
 const isAbs =(p: string) => /^([A-Za-z]:)?[\\/]/.test(p)
 const doc = atom({ plugin: 'file-preview', key: 'doc' } as const, { path: '', text: '', mtime: 0 } as Doc)
 const find = atom({ plugin: 'file-preview', key: 'find' } as const, { open: false, query: '' } as Find)
-// The pane's scroll offset, recorded by the ui.scroll hook so the footer can follow it.
-const view = atom({ plugin: 'file-preview', key: 'view' } as const, { offset: undefined } as View)
+// Bumped after every scroll so the pane redraws, its footer placed from the engine's
+// own `scroll` prop (a scroll this mod starts may not reach its own ui.scroll hook).
+const view = atom({ plugin: 'file-preview', key: 'view' } as const, { tick: 0 } as View)
+// The block a search jumped to, highlighted until the person does anything else.
+const mark = atom({ plugin: 'file-preview', key: 'mark' } as const, { block: null } as Mark)
+const redraw = ($: EngineInterface) => update($, view, v => ({ tick: v.tick + 1 }))
+const unmark = async ($: EngineInterface) => {
+  if ((await read($, mark)).block !== null) await update($, mark, () => ({ block: null }))
+}
 const WATCH_MS = 1500
+const MARK_BG = '#1f3a5f' // the jumped-to block's background
 
 // A block's searchable lines, as plain text.
 const blockLines = (b: Block): string[] =>
@@ -155,8 +163,26 @@ export const register: Register = (on, options) => {
   // footer on the window's new last rows.
   on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
     const moved = await next(e)
-    if (!moved.deny) await update($, view, () => ({ offset: e.offset }))
+    if (e.origin.kind === 'person') await unmark($)
+    await redraw($)
     return moved
+  })
+
+  // Anything the person does in the pane ends a jump's highlight; a jump that the
+  // press or Enter itself makes sets it again beneath this.
+  on('ui.press', { requestId: PANE }, async ($, e, next) => {
+    await unmark($)
+    return next(e)
+  })
+  on('ui.input', { requestId: PANE }, async ($, e, next) => {
+    await unmark($)
+    return next(e)
+  })
+
+  // Moving the focus ring (Tab, a click) is doing something else too.
+  on('ui.focus', { requestId: PANE }, async ($, e, next) => {
+    if (e.origin.kind === 'person') await unmark($)
+    return next(e)
   })
 
   on('ui.close', async ($, e, next) => {
@@ -193,6 +219,8 @@ export const register: Register = (on, options) => {
     const { Box, Text, Markdown, Code, Button } = els
     const Input = 'Input' in els ? els.Input : null // mobile draws no fields: no search there
     const { path, text } = await read($, doc)
+    const { block: marked } = await read($, mark)
+    await read($, view) // subscribes: a scroll's tick redraws the footer
     const cols = e.props.bodyColumns
     const width = Math.min(Math.max(20, cols - 2 * PAD), READ_MAX)
     const frame = { borderStyle: 'round', borderDimColor: true, paddingX: 1, flexDirection: 'column' } as const
@@ -329,7 +357,12 @@ export const register: Register = (on, options) => {
         count('mermaid') && `${count('mermaid')} diagrams`,
       ]
       const entries = all.flatMap((b, i) => blockLines(b).map(line => ({ block: i, text: line })))
-      return { stats, body: parts.map((p, i) => <Box key={`b:${i}`} flexDirection="column">{p}</Box>), entries }
+      const body = parts.map((p, i) => (
+        <Box key={`b:${i}`} flexDirection="column" backgroundColor={marked === i ? MARK_BG : undefined}>
+          {p}
+        </Box>
+      ))
+      return { stats, body, entries }
     }
 
     // A JSON or YAML file: the whole source, highlighted and numbered, cut where the
@@ -370,14 +403,21 @@ export const register: Register = (on, options) => {
     const { open: isSearching, query } = await read($, find)
     const hits = isSearching ? search(query, entries) : []
     // A refused scroll or focus (the pane not holding the keys) is not an error worth a throw.
-    const jump = (block: number) => $.ui.scroll({ to: { key: `b:${block}` }, in: PANE, block: 'start' }).catch(() => {})
+    const jump = async (block: number) => {
+      await update($, mark, () => ({ block }))
+      await $.ui.scroll({ to: { key: `b:${block}` }, in: PANE, block: 'start' }).catch(() => {})
+      await redraw($)
+    }
     // The sticky footer: absolutely placed on the window's last rows, following the
     // scroll (the ui.scroll hook records the offset). Every row is one terminal row,
     // so its height is known: a rule, the search rows while searching, the buttons.
-    const searching = isSearching && Input !== null
+    // Esc hands the keyboard back to the prompt, which no event reports, but the pane
+    // redraws with isFocused false: search shows only while the pane holds the keys,
+    // and losing them ends it (a render may not write state, so the clock does).
+    const searching = isSearching && Input !== null && e.props.isFocused
+    if (isSearching && !e.props.isFocused) $.clock.after(0, () => void update($, find, () => ({ open: false, query: '' })))
     const footerRows = 2 + (searching ? 2 + hits.length : 0)
-    const { offset: stored } = await read($, view)
-    const offset = stored ?? e.props.scroll.offset
+    const offset = e.props.scroll.offset
     const bodyRows = Math.max(footerRows + 1, e.props.scroll.bodyRows)
     const blank = ' '.repeat(Math.max(1, width))
     const clip = (t: string) => (t.length > width ? `${t.slice(0, width - 1)}…` : t)
@@ -413,7 +453,10 @@ export const register: Register = (on, options) => {
         ) : null}
         <Box flexDirection="row" justifyContent="space-between">
           <Box flexDirection="row" columnGap={1}>
-            <Button key="top" label="↑ Top" hotkey="u" onPress={() => $.ui.scroll({ to: 'start', in: PANE }).catch(() => {})} />
+            <Button key="top" label="↑ Top" hotkey="u" onPress={async () => {
+                await $.ui.scroll({ to: 'start', in: PANE }).catch(() => {})
+                await redraw($)
+              }} />
             {Input && !searching ? (
               <Button
                 key="find"
@@ -425,7 +468,7 @@ export const register: Register = (on, options) => {
                 }}
               />
             ) : null}
-            {searching ? <Button key="close-search" label="✕ Close" hotkey="q" onPress={() => update($, find, () => ({ open: false, query: '' }))} /> : null}
+            {searching ? <Button key="close-search" label="✕ Close" onPress={() => update($, find, () => ({ open: false, query: '' }))} /> : null}
             <Button
               key="refresh"
               label="↻ Refresh"
@@ -436,7 +479,7 @@ export const register: Register = (on, options) => {
               }}
             />
           </Box>
-          <Text dimColor wrap="truncate-start">{searching ? 'Esc leaves the field · q close' : 'u top · s search · r refresh'}</Text>
+          <Text dimColor wrap="truncate-start">{searching ? 'Esc closes search' : 'u top · s search · r refresh'}</Text>
         </Box>
       </Box>
     )

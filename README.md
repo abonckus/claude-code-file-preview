@@ -15,7 +15,7 @@ Mention a `.md`, `.json` or `.yaml` file in a conversation and Claude's reply tu
 - **Syntax highlighting.** Code blocks and data files use Claude Code's own highlighter, so any language that highlighter knows is coloured to match your theme, with nothing to install. A language it does not know is drawn plain.
 - **Live reload.** The file is checked every 1.5 s and reloaded when it changes, with a toast to say so. There is also a **↻ Refresh** button.
 - **Search.** **⌕ Search** opens a fuzzy search over the file: type a few letters in order (`crlim` finds *Credit Limit*), the best matches list under the field, Enter jumps to the first, and each match is a button that scrolls to it.
-- **↑ Top** scrolls back to the start.
+- **↑ Top** scrolls back to the start. A search jump highlights the block it lands on until you do anything else.
 - **Sticky footer.** The buttons (and the search field while searching) stay on the pane's bottom rows as you scroll.
 - **`/preview <path>`** opens any file by hand.
 
@@ -47,8 +47,8 @@ While the pane has the keyboard (click it, or `ctrl+x tab` from the prompt):
 | Key | Does |
 |:--|:--|
 | `u` | Scroll to the top |
-| `s` | Open search (the cursor starts in the field; Esc leaves it) |
-| `q` | Close search |
+| `s` | Open search (the cursor starts in the field) |
+| `Esc` | Close search (it hands the keyboard back to the prompt) |
 | `r` | Refresh |
 | `up` / `down`, `pageup` / `pagedown`, `home` / `end` | Scroll (Claude Code's own pane keys) |
 
