@@ -69,15 +69,13 @@ Claude Code's highlighter does not know every language. For one it does not, poi
 "pluginConfigs": {
   "file-preview": {
     "options": {
-      "highlighters": ["al: node \"/path/to/claude-code-al-syntax/highlighter/highlight.mjs\""]
+      "highlighters": ["al: node \"/path/to/highlighter.mjs\""]
     }
   }
 }
 ```
 
 Each entry is `<language>[, <language>…]: <command> [args…]`, the language being the code fence's name; double quotes group a path with spaces. For each code block in that language, the command is run with the code on stdin and must write a JSON array of `[text, capture]` spans to stdout, `capture` being a tree-sitter highlight name such as `keyword.control` or `comment.line`, or `null`. The spans must join back into the code. Anything else (a non-zero exit, other output) and the block is drawn by Claude Code's highlighter instead.
-
-[al-syntax](https://github.com/abonckus/claude-code-al-syntax) ships such a command for AL, built on tree-sitter.
 
 ## Limitations
 
