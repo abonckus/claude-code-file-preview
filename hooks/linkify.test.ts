@@ -20,8 +20,14 @@ test('links JSON and YAML too, longest extension first, sentence-final dots allo
   ])
 })
 
-test('leaves fences, urls and other files alone', () => {
-  const src = 'x.ts, a.json5 and https://e.com/a.md\n```\nfoo.md\n```\n'
+test('links any file with an extension, relative or absolute, dotted names whole', () => {
+  const r = linkify('Edit `hooks/register.tsx:157`, vite.config.ts and ' + String.raw`C:\x\a.cs.`, CWD)
+  expect(r.links).toEqual(['file:///C:/repo/hooks/register.tsx', 'file:///C:/repo/vite.config.ts', 'file:///C:/x/a.cs'])
+  expect(r.text).toContain('[`hooks/register.tsx:157`](file:///C:/repo/hooks/register.tsx)')
+})
+
+test('leaves fences, urls and numbers alone', () => {
+  const src = 'v1.2 and https://e.com/a.md\n```\nfoo.md\n```\n'
   expect(linkify(src, CWD).links).toEqual([])
 })
 

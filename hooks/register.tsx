@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Doc, Find, Mark, View } from '../types'
-import { linkify, toPath } from './linkify'
+import { linkify, PREVIEWABLE, toPath } from './linkify'
 import { blocks, chunk, clean, fit, GAP, plain } from './blocks'
 import type { Align, Block, Callout, Table } from './blocks'
 import { lines, parse, spansOf } from './highlighters'
@@ -193,7 +193,8 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Rewrites replies that mention previewable files so a click on the link opens the pane.
+  // Rewrites replies that mention existing files as file: links. A click on a previewable
+  // one opens the pane; the others are left to the surface, which opens them as usual.
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     const cwd = await $.session.cwd()
     const found = linkify(e.props.text, cwd).links
@@ -208,7 +209,7 @@ export const register: Register = (on, options) => {
       <Markdown
         key="md"
         text={text}
-        pressableLinks={links}
+        pressableLinks={links.filter(url => PREVIEWABLE.test(url))}
         onLinkPress={link => void show($, toPath(link.href))}
       />
     )
