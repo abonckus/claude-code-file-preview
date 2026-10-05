@@ -1,0 +1,16 @@
+{
+  "name": "file-preview",
+  "owner": {
+    "name": "Artūras Bončkus"
+  },
+  "metadata": {
+    "description": "The file-preview mod for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "file-preview",
+      "source": "./",
+      "description": "Click a markdown, JSON or YAML file link in a reply to preview it in a side pane, drawn like a docs page"
+    }
+  ]
+}
