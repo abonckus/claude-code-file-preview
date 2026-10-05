@@ -1,0 +1,9 @@
+{
+  "name": "md-preview",
+  "version": "0.1.0",
+  "description": "Click a .md file link in a reply to preview it in a side pane, rendered like a docs page",
+  "author": { "name": "Artūras Bončkus" },
+  "repository": "https://github.com/abonckus/claude-code-md-preview",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
