@@ -47,11 +47,19 @@ While the pane has the keyboard (click it, or `ctrl+x tab` from the prompt):
 | Key | Does |
 |:--|:--|
 | `u` | Scroll to the top |
-| `s` | Open search |
+| `s` | Open search (the cursor starts in the field; Esc leaves it) |
+| `q` | Close search |
 | `r` | Refresh |
 | `up` / `down`, `pageup` / `pagedown`, `home` / `end` | Scroll (Claude Code's own pane keys) |
 
 A pane button's hotkey must be one letter or digit, so search cannot be `/`.
+
+To move between search matches without leaving the keyboard, bind Claude Code's focus actions (Tab / Shift+Tab by default) in `~/.claude/keybindings.json`; Enter then opens the focused match:
+
+```json
+{ "context": "PaneField", "bindings": { "ctrl+j": "abovePrompt:next", "ctrl+k": "abovePrompt:previous" } },
+{ "context": "Pane", "bindings": { "ctrl+j": "abovePrompt:next", "ctrl+k": "abovePrompt:previous" } }
+```
 
 ## External highlighters
 

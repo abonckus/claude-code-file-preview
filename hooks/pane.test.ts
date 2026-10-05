@@ -170,6 +170,9 @@ test('search opens with the cursor in it, ranks fuzzy hits as you type, and clos
   await ui.press({ key: 'find' })
   expect(await ui.find({ key: 'search' })).toBeDefined()
   expect((await ui.find({ key: 'search' }))?.props.autoFocus).toBe(true)
+  // while searching, Search gives way to Close on q, after the hits in the focus order
+  expect(await ui.find({ key: 'find' })).toBeUndefined()
+  expect((await ui.find({ key: 'close-search' }))?.props.hotkey).toBe('q')
 
   await ui.input({ key: 'search', text: 'tbls', kind: 'change' })
   expect((await ui.find({ key: 'hit:0' }))?.props.label).toBe('Tables')

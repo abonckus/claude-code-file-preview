@@ -390,7 +390,7 @@ export const register: Register = (on, options) => {
         <Text dimColor>{'─'.repeat(Math.max(1, width))}</Text>
         {searching && Input ? (
           <Box flexDirection="column">
-            <Box flexDirection="row" columnGap={1}>
+            <Box flexDirection="row">
               <Box flexGrow={1}>
                 <Input
                   key="search"
@@ -404,7 +404,6 @@ export const register: Register = (on, options) => {
                   }}
                 />
               </Box>
-              <Button key="close-search" label="✕" onPress={() => update($, find, () => ({ open: false, query: '' }))} />
             </Box>
             <Text dimColor wrap="truncate-end">{query ? `${hits.length === 8 ? '8+' : hits.length} matches; Enter jumps to the first` : 'Type to search; Enter jumps to the best match'}</Text>
             {hits.map((hit, k) => (
@@ -415,7 +414,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" justifyContent="space-between">
           <Box flexDirection="row" columnGap={1}>
             <Button key="top" label="↑ Top" hotkey="u" onPress={() => $.ui.scroll({ to: 'start', in: PANE }).catch(() => {})} />
-            {Input ? (
+            {Input && !searching ? (
               <Button
                 key="find"
                 label="⌕ Search"
@@ -426,6 +425,7 @@ export const register: Register = (on, options) => {
                 }}
               />
             ) : null}
+            {searching ? <Button key="close-search" label="✕ Close" hotkey="q" onPress={() => update($, find, () => ({ open: false, query: '' }))} /> : null}
             <Button
               key="refresh"
               label="↻ Refresh"
@@ -436,7 +436,7 @@ export const register: Register = (on, options) => {
               }}
             />
           </Box>
-          <Text dimColor wrap="truncate-start">u top · s search · r refresh</Text>
+          <Text dimColor wrap="truncate-start">{searching ? 'Esc leaves the field · q close' : 'u top · s search · r refresh'}</Text>
         </Box>
       </Box>
     )
